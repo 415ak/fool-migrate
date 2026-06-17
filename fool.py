@@ -9,7 +9,9 @@ import math
 from airflow.exceptions import AirflowFailException, AirflowSkipException
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.hooks.postgres_hook import PostgresHook
+from airflow.models import Variable
 import pytz
+from psycopg2.extras import execute_values
 
 # disaster access token
 #token = "ElA6PJscJ665IMTkJTP2CnbAdhfrbZvlBTPVeKeho17MBVgVGxG7zVZ1Wpnu3mOO"
@@ -19,8 +21,9 @@ flood_caption = "1Day"
 # remake caption
 remake = "test"
 
-catalog_processing_id = f"62fc5865a2bfab7342ab7f35"
-token = f"WNmJ1S4GoZyp5euW2lUKLaBszKGhrgzQzJzgo5QYxuiMQc2JX3bnm1QTcOo7cwRT"
+catalog_processing_id = Variable.get("DISASTER_CATALOG_ID")
+token = Variable.get("DISASTER_API_TOKEN")
+conn_id = Variable.get("DISASTER_CONN_ID", default_var="farmai_conn")
 limit = 1000
 offset = 0
 
@@ -51,18 +54,14 @@ def get_content(url):
         return None
 
 def process_request(path):
-    complate = False
     start = 0 
     while start < 3:
         content = get_content(path) 
-        if type(content) is not None:
-            complate = True
-            if complate == True:  
-                return content
-            start += 1 
+        if content is not None:
+            return content
+        start += 1
 
-    if not complate: 
-        return False
+    return False
     
     
 def total_request(n_max, offset):
@@ -94,7 +93,7 @@ def get_content_disaster(url):
     return res        
  
 def get_check(sql):
-    hook = PostgresHook(postgres_conn_id='farmai_conn')
+    hook = PostgresHook(postgres_conn_id=conn_id)
     conn = hook.get_conn()
     
     # Create a cursor object
@@ -174,76 +173,38 @@ def inset_data_list(**kwargs):
     date_time = current_time.astimezone(timezone) 
     
     if "features" in data_list:
-        
-        
-        hook = PostgresHook(postgres_conn_id='farmai_conn')
+        hook = PostgresHook(postgres_conn_id=conn_id)
         conn = hook.get_conn()
-    
-        # Create a cursor object
         cur = conn.cursor()
+
+        rows_to_insert = []
+        keys_array = []
+
         for feature in data_list['features']:
             if "properties" in feature:
-                
                 properties = feature['properties']
                 
-                properties['_collectionid'] = properties['_collectionId']
-                
-                properties.pop('_collectionId', None)
-                
-                # set format
+                # Prepare data for insertion
+                properties['_collectionid'] = properties.pop('_collectionId', None)
                 properties['created_at'] = int(date_time.timestamp() * 1000)
-                properties['geom'] = f"{feature['geometry']}" 
-                
-                updateAt = properties['_updatedAt']
-                updateAt = datetime.fromisoformat(updateAt.replace("Z", "+00:00"))
-                
-                #properties['date'] = updateAt.strftime("%Y%m%d")
+                properties['geom'] = json.dumps(feature['geometry'])
                 properties['shpname'] = shpname
                 properties['remake'] = "airflow_schedule"
                 
-                keys_array = list(properties.keys())
-                #keys_array.extend(['created_at', 'geom', 'date', 'remake'])
-                strKey = ",".join([f"\"{key}\"" for key in keys_array])
+                if not keys_array:
+                    keys_array = list(properties.keys())
                 
-                arr_val = []
-                for key in keys_array:
-                    #print(key)
-                    arr_val.append(properties[key])
-                
-                exS = "%s"
-                arr_exS = []
-                for key in keys_array:
-                    if key == 'geom':
-                        arr_exS.append("ST_GeomFromGeoJSON(%s)")
-                    else:
-                        arr_exS.append(exS)
-                
-                
-                strExS = ",".join(arr_exS)
-                id = feature['properties']['_id']
-                
-                # get check
-                sel_sql = f"SELECT ID, _id FROM {table_name} WHERE _id = '{id}'"
-                #sel_sql = f"SELECT ID, _id FROM {table_name} WHERE _id = '633fd448020e28211f8fc7a9'"
-                #print(sel_sql) 
-                data_check = get_check(sel_sql)
-                #print(f"type data_check: {type(data_check)}") 
-                #print(f"data_check: {data_check}") 
-                
-                
-                #sql = "UPDATE" 
-                # data_check = true update value
-                if data_check is None: 
-                    sql = f"INSERT INTO {table_name} ({strKey}) VALUES ({strExS})"
-                    print(sql)
-                    cur.execute(sql, arr_val) 
-                #break
-        
-        
-        # Commit the transaction
-        conn.commit()
+                rows_to_insert.append(tuple(properties[key] for key in keys_array))
 
-        # Close the cursor and connection
+        if rows_to_insert:
+            strKey = ",".join([f"\"{key}\"" for key in keys_array])
+            template = "(" + ",".join(["ST_GeomFromGeoJSON(%s)" if key == 'geom' else "%s" for key in keys_array]) + ")"
+            # Using ON CONFLICT (_id) DO NOTHING for efficient bulk insertion
+            sql = f"INSERT INTO {table_name} ({strKey}) VALUES %s ON CONFLICT (_id) DO NOTHING"
+
+            execute_values(cur, sql, rows_to_insert, template=template)
+            conn.commit()
+
         cur.close()
         conn.close()
         return "Success."
