@@ -1,12 +1,12 @@
 from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow.providers.standard.operators.python import PythonOperator
 from datetime import datetime, timedelta
-from airflow.operators.empty import EmptyOperator
+from airflow.providers.standard.operators.empty import EmptyOperator
 import pendulum 
 import requests
 import json
 import math
-from airflow.exceptions import AirflowFailException, AirflowSkipException
+from airflow.sdk.exceptions import AirflowFailException, AirflowSkipException
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.models import Variable
@@ -21,8 +21,8 @@ flood_caption = "1Day"
 # remake caption
 remake = "test"
 
-catalog_processing_id = Variable.get("DISASTER_CATALOG_ID")
-token = Variable.get("DISASTER_API_TOKEN")
+catalog_processing_id = Variable.get("DISASTER_CATALOG_ID", default_var="62fc5865a2bfab7342ab7f35")
+token = Variable.get("DISASTER_API_TOKEN", default_var="WNmJ1S4GoZyp5euW2lUKLaBszKGhrgzQzJzgo5QYxuiMQc2JX3bnm1QTcOo7cwRT")
 conn_id = Variable.get("DISASTER_CONN_ID", default_var="farmai_conn")
 limit = 1000
 offset = 0
