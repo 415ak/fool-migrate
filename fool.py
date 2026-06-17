@@ -1,14 +1,14 @@
 from airflow import DAG
-from airflow.operators.python_operator import PythonOperator
+from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
-from airflow.operators.dummy_operator import DummyOperator
+from airflow.operators.empty import EmptyOperator
 import pendulum 
 import requests
 import json
 import math
 from airflow.exceptions import AirflowFailException, AirflowSkipException
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
-from airflow.hooks.postgres_hook import PostgresHook
+from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.models import Variable
 import pytz
 from psycopg2.extras import execute_values
@@ -226,75 +226,68 @@ default_args = {
     'retries': 1
 }
 
-dag = DAG(
+with DAG(
     "Flood_1day",
-    schedule_interval = '@daily', 
+    schedule = '@daily',
     #schedule= '0 2 * * *',
     catchup=False,
     start_date = pendulum.datetime(2024, 1, 1, tz="Asia/Bangkok"),
     tags=["Floods"]
-)
+) as dag:
 
-start = DummyOperator(
-    task_id='start', 
-    trigger_rule="one_success",
-    dag=dag
-)
+    start = EmptyOperator(
+        task_id='start',
+        trigger_rule="one_success",
+    )
 
-call_disaster_api = PythonOperator(
-    task_id='call_disaster_api',
-    python_callable=call_disaster_api,
-    provide_context=True, 
-) 
+    call_disaster_api_task = PythonOperator(
+        task_id='call_disaster_api',
+        python_callable=call_disaster_api,
+    )
 
-error_call_api = PythonOperator(
-    task_id='error_call_api',
-    python_callable=error_call_api,
-    provide_context=True
-) 
+    error_call_api_task = PythonOperator(
+        task_id='error_call_api',
+        python_callable=error_call_api,
+    )
 
-trigger_error_call_api = TriggerDagRunOperator( # Operator ที่ใช่ในการ trigger pipeline อื่น
-    task_id="trigger_error_call_api",
-    trigger_dag_id=dag_id_to_trigger, # ID ของ DAG เป้าหมายที่ต้องการจะ Trigger
-    conf={"message": f"Error: Call Api Disaster Flood {flood_caption}."}, # เราสามารถส่ง paramter ข้าม pipeline ไปรันใน pipeline ที่ถูก trigger
-)
+    trigger_error_call_api = TriggerDagRunOperator( # Operator ที่ใช่ในการ trigger pipeline อื่น
+        task_id="trigger_error_call_api",
+        trigger_dag_id=dag_id_to_trigger, # ID ของ DAG เป้าหมายที่ต้องการจะ Trigger
+        conf={"message": f"Error: Call Api Disaster Flood {flood_caption}."}, # เราสามารถส่ง paramter ข้าม pipeline ไปรันใน pipeline ที่ถูก trigger
+    )
 
-check_data_list = PythonOperator(
-    task_id='check_data_list',
-    python_callable=check_data_list,
-    provide_context=True 
-)
+    check_data_list_task = PythonOperator(
+        task_id='check_data_list',
+        python_callable=check_data_list,
+    )
 
-inset_data_list = PythonOperator(
-    task_id='inset_data_list',
-    python_callable=inset_data_list,
-    provide_context=True 
-)
+    inset_data_list_task = PythonOperator(
+        task_id='inset_data_list',
+        python_callable=inset_data_list,
+    )
 
-save_value_fail = PythonOperator(
-    task_id='save_value_fail',
-    python_callable=save_value_fail,
-    provide_context=True
-)
+    save_value_fail_task = PythonOperator(
+        task_id='save_value_fail',
+        python_callable=save_value_fail,
+    )
 
-trigger_error_save = TriggerDagRunOperator( # Operator ที่ใช่ในการ trigger pipeline อื่น
-    task_id="trigger_error_save",
-    trigger_dag_id=dag_id_to_trigger, # ID ของ DAG เป้าหมายที่ต้องการจะ Trigger
-    conf={"message": f"Error: Save Disaster Flood {flood_caption}."}, # เราสามารถส่ง paramter ข้าม pipeline ไปรันใน pipeline ที่ถูก trigger
-)
+    trigger_error_save = TriggerDagRunOperator( # Operator ที่ใช่ในการ trigger pipeline อื่น
+        task_id="trigger_error_save",
+        trigger_dag_id=dag_id_to_trigger, # ID ของ DAG เป้าหมายที่ต้องการจะ Trigger
+        conf={"message": f"Error: Save Disaster Flood {flood_caption}."}, # เราสามารถส่ง paramter ข้าม pipeline ไปรันใน pipeline ที่ถูก trigger
+    )
 
 
-end = DummyOperator(
-    task_id='end', 
-    trigger_rule="one_success",
-    #dag=dag
-)
+    end = EmptyOperator(
+        task_id='end',
+        trigger_rule="one_success",
+    )
 
 
-start >> call_disaster_api 
+    start >> call_disaster_api_task
 
-call_disaster_api >> check_data_list >> inset_data_list >> end
+    call_disaster_api_task >> check_data_list_task >> inset_data_list_task >> end
 
-inset_data_list >> save_value_fail >> trigger_error_save >> end
+    inset_data_list_task >> save_value_fail_task >> trigger_error_save >> end
 
-call_disaster_api >> error_call_api >> trigger_error_call_api >> end
+    call_disaster_api_task >> error_call_api_task >> trigger_error_call_api >> end
