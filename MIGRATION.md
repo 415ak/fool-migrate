@@ -35,3 +35,6 @@ This repository has been upgraded to Apache Airflow 3.2. The following changes w
 - Validated syntax and import structure using `python3 -m py_compile`.
 - Ensured all tasks are correctly associated with the DAG via the context manager.
 - Cleaned up environment-specific artifacts (`__pycache__`).
+
+## Requirements
+A `requirements.txt` file has been added to the repository root with all necessary dependencies for Airflow 3.2.
