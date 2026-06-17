@@ -1,12 +1,12 @@
 from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow.providers.standard.operators.python import PythonOperator
 from datetime import datetime, timedelta
-from airflow.operators.empty import EmptyOperator
+from airflow.providers.standard.operators.empty import EmptyOperator
 import pendulum 
 import requests
 import json
 import math
-from airflow.exceptions import AirflowFailException, AirflowSkipException
+from airflow.sdk.exceptions import AirflowFailException, AirflowSkipException
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.models import Variable
@@ -21,9 +21,6 @@ flood_caption = "1Day"
 # remake caption
 remake = "test"
 
-catalog_processing_id = Variable.get("DISASTER_CATALOG_ID")
-token = Variable.get("DISASTER_API_TOKEN")
-conn_id = Variable.get("DISASTER_CONN_ID", default_var="farmai_conn")
 limit = 1000
 offset = 0
 
@@ -93,6 +90,7 @@ def get_content_disaster(url):
     return res        
  
 def get_check(sql):
+    conn_id = Variable.get("DISASTER_CONN_ID", default_var="farmai_conn")
     hook = PostgresHook(postgres_conn_id=conn_id)
     conn = hook.get_conn()
     
@@ -119,6 +117,8 @@ def get_check(sql):
     
 # call function task
 def call_disaster_api(**kwargs):
+    catalog_processing_id = Variable.get("DISASTER_CATALOG_ID", default_var="62fc5865a2bfab7342ab7f35")
+    token = Variable.get("DISASTER_API_TOKEN", default_var="WNmJ1S4GoZyp5euW2lUKLaBszKGhrgzQzJzgo5QYxuiMQc2JX3bnm1QTcOo7cwRT")
     limit_list = limit
     offset_list = offset
     url = f"https://disaster-vallaris.gistda.or.th/core/api/features/1.0/collections/{catalog_processing_id}/items?api_key={token}&limit={limit_list}&offset={offset_list}"
@@ -173,6 +173,7 @@ def inset_data_list(**kwargs):
     date_time = current_time.astimezone(timezone) 
     
     if "features" in data_list:
+        conn_id = Variable.get("DISASTER_CONN_ID", default_var="farmai_conn")
         hook = PostgresHook(postgres_conn_id=conn_id)
         conn = hook.get_conn()
         cur = conn.cursor()

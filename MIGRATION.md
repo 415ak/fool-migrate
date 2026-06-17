@@ -24,10 +24,8 @@ This repository has been upgraded to Apache Airflow 3.2. The following changes w
 
 ### 5. Security and Configuration
 - Removed hardcoded API tokens and sensitive IDs.
-- Integrated `airflow.models.Variable` to retrieve configuration dynamically:
-  - `DISASTER_API_TOKEN`
-  - `DISASTER_CATALOG_ID`
-  - `DISASTER_CONN_ID` (defaults to `farmai_conn`)
+- Integrated `airflow.models.Variable` to retrieve configuration dynamically.
+- **Improved Robustness**: Moved `Variable.get` calls from the top-level (parsing time) to inside the task functions (execution time). This prevents `VARIABLE_NOT_FOUND` errors during DAG parsing in Airflow 3.x environments.
 
 ### 6. Performance Optimization
 - Refactored the database insertion logic to use **Bulk Insertion** via `execute_values`.
